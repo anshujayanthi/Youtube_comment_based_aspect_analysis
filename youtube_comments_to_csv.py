@@ -3,74 +3,84 @@ import pandas as pd
 from time import sleep
 import traceback
 import os
-import argparse
+import getpass
 from dotenv import load_dotenv
-
 
 load_dotenv()
 
-MAX_PAGES = 5 
-
-def get_comments(api_key, video_id):
+def get_comments(api_key, video_id, max_pages=5):
     youtube = build('youtube', 'v3', developerKey=api_key)
 
     request = youtube.commentThreads().list(
         part="snippet,replies",
         videoId=video_id,
-        textFormat="plainText"
+        textFormat="plainText",
+        maxResults=100,
+        order="relevance"
+
     )
 
-    df = pd.DataFrame(columns=['comment', 'replies', 'date', 'user_name'])
+    df = pd.DataFrame(columns=['comment', 'replies', 'date', 'user_name', 'likes'])
 
     curr_page = 0
 
-    while request and curr_page < MAX_PAGES:
+    while request and curr_page < max_pages:
         curr_page += 1
-        replies = []
-        comments = []
         try:
             response = request.execute()
 
+            comments, replies, dates, users, likes = [], [], [], [], []
+
             for item in response['items']:
-               
-                comment = item['snippet']['topLevelComment']['snippet']['textDisplay']
+                snippet = item['snippet']['topLevelComment']['snippet']
+
+                comment = snippet['textDisplay']
+                user = snippet['authorDisplayName']
+                date = snippet['publishedAt']
+                like_count = snippet['likeCount']
+
                 comments.append(comment)
+                users.append(user)
+                dates.append(date)
+                likes.append(like_count)
 
-                replycount = item['snippet']['totalReplyCount']
-
-
-                replies.append([])
-                
-                if replycount > 0:
+                # replies
+                reply_list = []
+                if 'replies' in item:
                     for reply in item['replies']['comments']:
-                        reply = reply['snippet']['textDisplay']
-                        replies[-1].append(reply)
-                    
-            # create new dataframe
-            df2 = pd.DataFrame({"comment": comments, "replies": replies})
+                        reply_list.append(reply['snippet']['textDisplay'])
+                replies.append(reply_list)
+
+            # add to dataframe
+            df2 = pd.DataFrame({
+                "comment": comments,
+                "replies": replies,
+                "date": dates,
+                "user_name": users,
+                "likes": likes
+            })
+
             df = pd.concat([df, df2], ignore_index=True)
-            df.to_csv(f"{video_id}_user_comments.csv", index=False, encoding='utf-8')
-            sleep(2)
+
+            # sleep(1)  # be nice to API
             request = youtube.commentThreads().list_next(request, response)
-            print("Iterating through next page")
-        except Exception as e:
-            print(str(e))
-            print(traceback.format_exc())
-            print("Sleeping for 10 seconds")
-            sleep(10)
-            df.to_csv(f"{video_id}_user_comments.csv", index=False, encoding='utf-8')
+            print(f"Page {curr_page} fetched...")
+
+        except Exception:
+            traceback.print_exc()
             break
 
-def main():
-    api_key = os.getenv("API_KEY")
-    parser = argparse.ArgumentParser(description="YouTube Comment Scraper")
-    parser.add_argument("video_id", help="YouTube video ID")
-    args = parser.parse_args()
+    df.to_csv(f"{video_id}_user_comments.csv", index=False, encoding='utf-8')
+    print(f"Saved {len(df)} comments to {video_id}_user_comments.csv")
 
-    get_comments(api_key, args.video_id)
+
+def main():
+    load_dotenv()
+    api_key = os.getenv("API_KEY")
+    print(api_key)
+    video_id = input("Enter YouTube video ID: ")
+    get_comments(api_key, video_id)
+
 
 if __name__ == "__main__":
     main()
-
-
-# Do we need features like data, user_name etc? for now leaving it out.
