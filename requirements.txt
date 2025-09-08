@@ -1,3 +1,5 @@
+#list dependencies
+
 google_api_python_client==2.179.0
 pandas==2.3.1
 python-dotenv==1.1.1
